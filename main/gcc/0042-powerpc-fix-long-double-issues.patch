@@ -1,0 +1,85 @@
+From 9f1a6501994a2d18ec4fe2a6664637f48021b210 Mon Sep 17 00:00:00 2001
+From: Michael Meissner <meissner@linux.ibm.com>
+Date: Thu, 3 Dec 2020 14:50:26 -0500
+Subject: [PATCH] PowerPC: PR libgcc/97543 and libgcc/97643, fix long double
+ issues
+
+If you use a compiler with long double defaulting to 64-bit instead of 128-bit
+with IBM extended double, you get linker warnings about mis-matches in the gnu
+attributes for long double (PR libgcc/97543).  Even if the compiler is
+configured to have long double be 64 bit as the default with the configuration
+option '--without-long-double-128' you get the warnings.
+
+You also get the same issues if you use a compiler with long double defaulting
+to IEEE 128-bit instead of IBM extended double (PR libgcc/97643).
+
+The issue is the way libgcc.a/libgcc.so is built.  Right now when building
+libgcc under Linux, the long double size is set to 128-bits when building
+libgcc.  However, the gnu attributes are set, leading to the warnings.
+
+One feature of the current GNU attribute implementation is if you have a shared
+library (such as libgcc_s.so), the GNU attributes for the shared library is an
+inclusive OR of all of the objects within the library.  This means if any
+object file that uses the -mlong-double-128 option and uses long double, the GNU
+attributes for the library will indicate that it uses 128-bit IBM long
+doubles.  If you have a static library, you will get the warning only if you
+actually reference an object file  with the attribute set.
+
+This patch does two things:
+
+    1)	All of the object files that support IBM 128-bit long doubles
+	explicitly set the ABI to IBM extended double.
+
+    2)	I turned off GNU attributes for building the shared library or for
+        building the IBM 128-bit long double support.
+
+libgcc/
+2020-12-03  Michael Meissner  <meissner@linux.ibm.com>
+
+	PR libgcc/97543
+	PR libgcc/97643
+	* config/rs6000/t-linux (IBM128_STATIC_OBJS): New make variable.
+	(IBM128_SHARED_OBJS): New make variable.
+	(IBM128_OBJS): New make variable.  Set all objects to use the
+	explicit IBM format, and disable gnu attributes.
+	(IBM128_CFLAGS): New make variable.
+	(gcc_s_compile): Add -mno-gnu-attribute to all shared library
+	modules.
+---
+ libgcc/config/rs6000/t-linux | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/libgcc/config/rs6000/t-linux b/libgcc/config/rs6000/t-linux
+index ed821947b66..72e9c2770a6 100644
+--- a/libgcc/config/rs6000/t-linux
++++ b/libgcc/config/rs6000/t-linux
+@@ -3,3 +3,25 @@ HOST_LIBGCC2_CFLAGS += -mlong-double-128
+ SHLIB_MAPFILES += $(srcdir)/config/rs6000/libgcc-glibc.ver
+ 
+ HOST_LIBGCC2_CFLAGS += -mlong-double-128 -mno-minimal-toc
++
++# On the modules that deal with IBM 128-bit values, make sure that TFmode uses
++# the IBM extended double format.  Also turn off gnu attributes on the static
++# modules.
++IBM128_STATIC_OBJS	= ibm-ldouble$(objext) _powitf2$(objext) \
++			  ppc64-fp$(objext) _divtc3$(object) _multc3$(object) \
++			  _fixtfdi$(object) _fixunstfdi$(object) \
++	                  _floatditf$(objext) _floatunsditf$(objext)
++IBM128_SHARED_OBJS	= $(IBM128_STATIC_OBJS:$(objext):_s$(objext))
++IBM128_OBJS		= $(IBM128_STATIC_OBJS) $(IBM128_SHARED_OBJS)
++
++IBM128_CFLAGS		= -Wno-psabi -mabi=ibmlongdouble -mno-gnu-attribute
++
++$(IBM128_OBJS) : INTERNAL_CFLAGS += $(IBM128_CFLAGS)
++
++# Turn off gnu attributes for long double size on all of the shared library
++# modules, but leave it on for the static modules, except for the functions
++# that explicitly process IBM 128-bit floating point.  Shared libraries only
++# have one gnu attribute for the whole library, and it can lead to warnings if
++# somebody changes the long double format.  We leave it on for the static
++# modules to catch mis-compilation errors.
++gcc_s_compile += -mno-gnu-attribute
+-- 
+2.27.0
+
+
