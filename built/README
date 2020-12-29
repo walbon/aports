@@ -1,0 +1,16 @@
+# Problem
+The problem happens in the Alpine linux v3.12, where the binutils v2.35.1 brings the feature to check the GNU Attributes(patch)[https://sourceware.org/git/?p=binutils-gdb.git;a=commit;h=a8acd6eeb6dc2cc5460ece90f90ebe36b56b20ba] and the GCC v10 got this error but not in v11, the building should avoid using the GNU Attributes.## SolvingMichael Meissner wrote a [patch](https://gcc.gnu.org/git/gitweb.cgi?p=gcc.git;h=9f1a6501994a2d18ec4fe2a6664637f48021b210) for GCC v10 and I backported it to Alpine GCC [here](https://github.com/walbon/aports/commit/f188c0b799df8550c595d6a94ffc6dab0254d11a).
+# Checking
+To check this you can set up the environment Alpine and install the binutils 2.35.1-r0, in this [Dockerfile](Dockerfile) to setup the Alpine and run a simple code to expose the error.
+```docker build -t mytest -f Dockerfile .```
+Run the environment and add the binutils, using the built package here.
+```docker run -v $(pwd):/home/devel/packs -u devel -it mytest
+~/ sudo apk add packs/binutils-2.35.1-r0.apk
+~/ make
+```
+That should show an error in linker step.
+So, if you install the package of [libgcc](libgcc-10.2.0-r6.apk) with the backport the error does not occur anymore.```docker run -v $(pwd):/home/devel/packs -u devel -it mytest
+~/ sudo apk add packs/libgcc-10.2.0-r6.apk
+~/ make
+```
+
